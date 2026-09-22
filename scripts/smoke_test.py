@@ -12,10 +12,10 @@ import time
 
 import aiohttp
 
-A_HTTP, B_HTTP = 8101, 8102
+A_HTTP, B_HTTP = 8301, 8302
 NODES = [
-    ["--name", "A", "--port", "7101", "--peer", "127.0.0.1:7102", "--http", str(A_HTTP)],
-    ["--name", "B", "--port", "7102", "--peer", "127.0.0.1:7101", "--http", str(B_HTTP), "--parrot"],
+    ["--name", "A", "--port", "7301", "--peer", "127.0.0.1:7302", "--http", str(A_HTTP)],
+    ["--name", "B", "--port", "7302", "--peer", "127.0.0.1:7301", "--http", str(B_HTTP), "--parrot"],
 ]
 
 

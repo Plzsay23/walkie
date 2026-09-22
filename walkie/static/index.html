@@ -4,84 +4,245 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0c0f13">
 <title>무전기</title>
 <style>
 :root {
-  --bg: #101317; --panel: #1a1f26; --line: #2a313b;
-  --text: #e8ecf1; --dim: #8a94a3;
-  --tx: #e5484d; --rx: #30a46c; --req: #b7791f; --dnd: #f5a524; --off: #4b525c;
+  --bg: #0c0f13; --panel: #151a21; --panel2: #1b2129; --line: #252c36;
+  --text: #e9edf2; --dim: #8b95a3; --faint: #5a6371;
+  --tx: #ef4f55; --rx: #34b27b; --dnd: #f3a33a; --cam: #4aa3ff; --off: #3a424d;
+  --r: 18px;
 }
 * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-  font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif; overflow: hidden; }
-body { display: grid; grid-template-columns: 1fr minmax(300px, 38%); grid-template-rows: auto 1fr;
-  gap: 16px; padding: 16px; }
-header { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.pill { padding: 7px 14px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line);
-  font-size: 15px; display: flex; align-items: center; gap: 8px; }
-.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--off); }
-.dot.ok { background: var(--rx); } .dot.warn { background: var(--dnd); } .dot.bad { background: var(--tx); }
-.spacer { flex: 1; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+  font-family: "Pretendard", "Noto Sans KR", system-ui, -apple-system, sans-serif; }
+svg { display: block; }
+button { font: inherit; color: inherit; }
 
-#video { background: #000; border-radius: 14px; border: 1px solid var(--line); display: flex;
-  align-items: center; justify-content: center; color: var(--dim); font-size: 17px; text-align: center;
-  padding: 16px; min-height: 0; }
+.app { height: 100%; display: grid; grid-template-columns: 1fr clamp(260px, 26vw, 330px);
+  grid-template-rows: auto auto 1fr; gap: 12px; padding: 12px; }
 
-aside { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
-#ptt { flex: 1; min-height: 160px; border-radius: 24px; border: none; background: #262d36; color: #fff;
-  font-size: 30px; font-weight: 700; touch-action: none; transition: background .12s; line-height: 1.3; }
-#ptt small { display: block; font-size: 16px; font-weight: 500; opacity: .8; margin-top: 6px; }
-#ptt.tx { background: var(--tx); } #ptt.rx { background: var(--rx); } #ptt.req { background: var(--req); }
-#ptt.blocked { background: #1d2127; color: var(--dim); }
-.toggles { display: flex; gap: 12px; }
-.tg { flex: 1; padding: 18px 10px; border-radius: 14px; border: 2px solid var(--line); background: var(--panel);
-  color: var(--text); font-size: 18px; font-weight: 600; }
-.tg.on { border-color: var(--dnd); color: var(--dnd); }
-#cam.on { border-color: var(--rx); color: var(--rx); }
-#notice { min-height: 26px; text-align: center; color: var(--dnd); font-size: 17px; opacity: 0; transition: opacity .2s; }
-#notice.show { opacity: 1; }
+/* ── 윗줄 ───────────────────────────── */
+.top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 2px 4px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .logo { width: 34px; height: 34px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line);
+  display: grid; place-items: center; color: var(--rx); }
+.brand b { font-size: 19px; letter-spacing: .2px; }
+.brand span { color: var(--dim); font-size: 14px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; }
+.chip { display: flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line); font-size: 13.5px; color: var(--dim); white-space: nowrap; }
+.chip b { color: var(--text); font-weight: 600; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); flex: none; }
+.ok { background: var(--rx); } .warn { background: var(--dnd); } .bad { background: var(--tx); }
+.clock { font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 600; letter-spacing: .5px; }
+
+.dndbar { grid-column: 1 / -1; display: none; align-items: center; gap: 10px; padding: 10px 16px;
+  border-radius: 12px; background: rgba(243,163,58,.12); border: 1px solid rgba(243,163,58,.45); color: var(--dnd);
+  font-weight: 600; font-size: 15px; }
+body.dnd .dndbar { display: flex; }
+
+/* ── 영상 ───────────────────────────── */
+.stage { grid-row: 3; grid-column: 1; position: relative; min-height: 0; border-radius: var(--r); overflow: hidden; background: #000;
+  border: 2px solid var(--line); transition: border-color .15s, box-shadow .15s; }
+body.rx .stage { border-color: var(--rx); box-shadow: 0 0 0 4px rgba(52,178,123,.18); }
+body.tx .stage { border-color: var(--tx); box-shadow: 0 0 0 4px rgba(239,79,85,.18); }
+#peerCv { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center; padding: 24px; color: var(--dim);
+  background: radial-gradient(ellipse at center, #141920 0%, #07090b 70%); }
+.ph .ic { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; background: var(--panel2);
+  border: 1px solid var(--line); color: var(--faint); margin-bottom: 4px; }
+.ph .t { font-size: 20px; font-weight: 600; color: var(--text); }
+.ph .d { font-size: 14.5px; max-width: 420px; line-height: 1.5; }
+.ph.hide { display: none; }
+
+.ov { position: absolute; display: flex; gap: 8px; align-items: center; }
+.ov.tl { top: 14px; left: 14px; }
+.badge { padding: 5px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; background: rgba(0,0,0,.55);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: #fff; display: flex; align-items: center; gap: 6px; }
+.badge.live { background: rgba(239,79,85,.9); }
+.badge.live i { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: blink 1.4s infinite; }
+.badge.fps { color: #cfd6df; font-weight: 500; font-variant-numeric: tabular-nums; }
+@keyframes blink { 50% { opacity: .25; } }
+
+.talk { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: none; align-items: center; gap: 12px;
+  padding: 10px 18px; border-radius: 999px; font-weight: 600; font-size: 16px; color: #fff;
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); white-space: nowrap; }
+body.rx .talk { display: flex; background: rgba(52,178,123,.88); }
+body.tx .talk { display: flex; background: rgba(239,79,85,.9); }
+.talk .time { font-variant-numeric: tabular-nums; opacity: .85; font-weight: 500; }
+.bars { display: flex; gap: 3px; align-items: center; height: 18px; }
+.bars i { width: 3px; border-radius: 2px; background: #fff; animation: eq .9s ease-in-out infinite; }
+.bars i:nth-child(1) { animation-delay: -.2s; } .bars i:nth-child(2) { animation-delay: -.5s; }
+.bars i:nth-child(3) { animation-delay: -.1s; } .bars i:nth-child(4) { animation-delay: -.7s; }
+@keyframes eq { 0%, 100% { height: 5px; } 50% { height: 18px; } }
+
+.pip { position: absolute; right: 14px; bottom: 14px; width: 22%; min-width: 150px; aspect-ratio: 16 / 9;
+  border-radius: 12px; overflow: hidden; background: #000; border: 2px solid rgba(255,255,255,.18);
+  box-shadow: 0 6px 24px rgba(0,0,0,.5); display: none; }
+.pip.show { display: block; }
+.pip canvas { width: 100%; height: 100%; display: block; }
+.pip span { position: absolute; left: 8px; top: 6px; font-size: 11.5px; font-weight: 600; padding: 2px 7px; border-radius: 6px;
+  background: rgba(0,0,0,.55); }
+
+/* ── 오른쪽 ─────────────────────────── */
+.side { grid-row: 3; grid-column: 2; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; }
+.card h3 { margin: 0 0 10px; font-size: 12.5px; font-weight: 600; color: var(--faint); letter-spacing: .6px; }
+
+.peer-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.avatar { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-weight: 700; font-size: 19px;
+  background: var(--panel2); border: 1px solid var(--line); position: relative; }
+.avatar .dot { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border: 2px solid var(--panel); }
+.peer-head .nm { font-size: 17px; font-weight: 700; }
+.peer-head .st { font-size: 13px; color: var(--dim); margin-top: 2px; }
+.kv { display: grid; grid-template-columns: 1fr auto; row-gap: 8px; font-size: 14px; }
+.kv .k { color: var(--dim); display: flex; align-items: center; gap: 8px; }
+.kv .v { font-weight: 600; text-align: right; }
+.v.on { color: var(--rx); } .v.warn { color: var(--dnd); } .v.bad { color: var(--tx); } .v.off { color: var(--faint); }
+
+.row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.row + .row { border-top: 1px solid var(--line); }
+.row .ic { width: 36px; height: 36px; border-radius: 11px; background: var(--panel2); display: grid; place-items: center;
+  color: var(--dim); flex: none; }
+.row .tx { flex: 1; min-width: 0; }
+.row .t { font-weight: 600; font-size: 15.5px; }
+.row .d { font-size: 12.5px; color: var(--dim); margin-top: 2px; }
+.row.cam.on .ic { color: var(--cam); } .row.dnd.on .ic { color: var(--dnd); }
+.row.disabled { opacity: .45; }
+
+.sw { position: relative; width: 74px; height: 34px; border-radius: 999px; border: none; background: var(--off); flex: none;
+  cursor: pointer; transition: background .15s; padding: 0; }
+.sw::before { content: "OFF"; position: absolute; right: 11px; top: 50%; transform: translateY(-50%); font-size: 12px;
+  font-weight: 700; color: #aab3bf; letter-spacing: .4px; }
+.sw::after { content: ""; position: absolute; left: 4px; top: 4px; width: 26px; height: 26px; border-radius: 50%; background: #fff;
+  transition: transform .15s; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.sw.on::before { content: "ON"; right: auto; left: 13px; color: #fff; }
+.sw.on::after { transform: translateX(40px); }
+.row.cam .sw.on { background: var(--cam); } .row.dnd .sw.on { background: var(--dnd); }
+
+#ptt { margin-top: auto; flex: none; height: clamp(96px, 20vh, 150px); border-radius: var(--r); border: none; cursor: pointer;
+  background: #232a34; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  touch-action: none; transition: background .12s, transform .08s; }
+#ptt .mic { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.1); }
+#ptt .l { font-size: 19px; font-weight: 700; }
+#ptt small { font-size: 12.5px; color: rgba(255,255,255,.7); }
+#ptt.ready { background: #2b3543; }
+#ptt.tx { background: var(--tx); transform: scale(.985); }
+#ptt.rx { background: #1f3a2e; color: #bfe9d4; }
+#ptt.req { background: #6b4a1a; }
+#ptt.blocked { background: #1a1f26; color: var(--faint); cursor: not-allowed; }
+#ptt.blocked small { color: var(--faint); }
+
+.notice { min-height: 20px; text-align: center; font-size: 14px; color: var(--dnd); opacity: 0; transition: opacity .2s; }
+.notice.show { opacity: 1; }
+
+.offline { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(6,8,10,.8);
+  font-size: 18px; font-weight: 600; z-index: 10; }
+body.offline .offline { display: flex; }
 
 @media (orientation: portrait) {
-  body { grid-template-columns: 1fr; grid-template-rows: auto minmax(160px, 40%) 1fr; }
+  html, body { overflow: auto; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto auto 46vh auto; height: auto; min-height: 100%; }
+  .side { grid-row: 4; grid-column: 1; }
 }
 </style>
 </head>
 <body>
-<header>
-  <div class="pill"><span class="dot" id="connDot"></span><span id="me">연결 중…</span></div>
-  <div class="pill"><span class="dot" id="peerDot"></span><span id="peer">상대 —</span></div>
-  <div class="spacer"></div>
-  <div class="pill" id="myCam" style="display:none">● 내 카메라 공유 중</div>
-</header>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="7" width="12" height="15" rx="2.5"/><path d="M9 7V2"/><circle cx="12" cy="17" r="2"/><path d="M9.5 11h5"/></svg></div>
+      <b id="myName">—</b><span>무전기</span>
+    </div>
+    <div class="chips">
+      <span class="chip"><i class="dot" id="linkDot"></i><span id="linkText">연결 확인 중</span></span>
+      <span class="chip"><i class="dot" id="audioDot"></i><span id="audioText">오디오</span></span>
+    </div>
+    <div class="clock" id="clock">--:--</div>
+  </header>
 
-<section id="video">상대 카메라 영상 자리입니다<br>(영상은 다음 단계에서 붙입니다)</section>
-
-<aside>
-  <button id="ptt" class="blocked">누르고 말하기</button>
-  <div id="notice"></div>
-  <div class="toggles">
-    <button class="tg" id="cam">카메라 공유</button>
-    <button class="tg" id="dnd">방해금지</button>
+  <div class="dndbar">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    방해금지 중 · 음성과 영상이 모두 차단됩니다
   </div>
-</aside>
+
+  <main class="stage">
+    <canvas id="peerCv"></canvas>
+    <div class="ph" id="ph">
+      <div class="ic"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M10.7 5H14l2 2h3a2 2 0 0 1 2 2v8.3"/><path d="M17.8 18H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.2"/><path d="M9.9 10.4a3 3 0 0 0 4 4"/></svg></div>
+      <div class="t" id="phT">연결 확인 중</div>
+      <div class="d" id="phD"></div>
+    </div>
+    <div class="ov tl" id="ovTl" style="display:none">
+      <span class="badge live"><i></i>LIVE</span>
+      <span class="badge" id="vidName">상대 카메라</span>
+      <span class="badge fps" id="fps"></span>
+    </div>
+    <div class="talk"><span class="bars"><i></i><i></i><i></i><i></i></span><span id="talkText"></span><span class="time" id="talkTime">0:00</span></div>
+    <div class="pip" id="pip"><canvas id="selfCv"></canvas><span>내 카메라</span></div>
+  </main>
+
+  <aside class="side">
+    <section class="card">
+      <h3>상대 무전기</h3>
+      <div class="peer-head">
+        <div class="avatar" id="peerAv">?<i class="dot" id="peerDot"></i></div>
+        <div><div class="nm" id="peerName">—</div><div class="st" id="peerSt">—</div></div>
+      </div>
+      <div class="kv">
+        <span class="k">카메라</span><span class="v" id="kvCam">—</span>
+        <span class="k">방해금지</span><span class="v" id="kvDnd">—</span>
+        <span class="k">마이크/스피커</span><span class="v" id="kvAudio">—</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>내 설정</h3>
+      <div class="row cam" id="rowCam">
+        <div class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>
+        <div class="tx"><div class="t">카메라 공유</div><div class="d" id="camD">상대에게 내 카메라를 보여 줍니다</div></div>
+        <button class="sw" id="camSw" role="switch" aria-label="카메라 공유"></button>
+      </div>
+      <div class="row dnd" id="rowDnd">
+        <div class="ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></div>
+        <div class="tx"><div class="t">방해금지</div><div class="d" id="dndD">켜면 음성·영상을 모두 막습니다</div></div>
+        <button class="sw" id="dndSw" role="switch" aria-label="방해금지"></button>
+      </div>
+    </section>
+
+    <button id="ptt" class="blocked">
+      <span class="mic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v4"/></svg></span>
+      <span class="l" id="pttL">연결 중…</span>
+      <small id="pttS"></small>
+    </button>
+    <div class="notice" id="notice"></div>
+  </aside>
+</div>
+<div class="offline">무전기 본체와 연결이 끊겼습니다 · 다시 연결하는 중…</div>
 
 <script>
 var $ = function (id) { return document.getElementById(id); };
 var ws = null, st = null, holding = false, lastNotice = null, noticeTimer = null;
+var modeSince = Date.now(), lastMode = null;
 
+/* ── 서버 연결 ─────────────────────────── */
 function connect() {
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
   ws.onmessage = function (e) { st = JSON.parse(e.data); render(); };
+  ws.onopen = function () { document.body.classList.remove("offline"); };
   ws.onclose = function () {
-    st = null; holding = false; render();
+    st = null; holding = false; document.body.classList.add("offline");
+    peerStream.set(false); selfStream.set(false);
     setTimeout(connect, 1000);
   };
 }
 function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
 
+/* ── PTT ──────────────────────────────── */
 function down() { if (holding) return; holding = true; send({ t: "ptt", down: true }); }
 function up() { if (!holding) return; holding = false; send({ t: "ptt", down: false }); }
-
 var ptt = $("ptt");
 ptt.addEventListener("pointerdown", function (e) {
   e.preventDefault();
@@ -90,62 +251,173 @@ ptt.addEventListener("pointerdown", function (e) {
 });
 ["pointerup", "pointercancel", "lostpointercapture"].forEach(function (ev) { ptt.addEventListener(ev, up); });
 document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-document.addEventListener("keydown", function (e) {
-  if (e.code === "Space" && !e.repeat) { e.preventDefault(); down(); }
-});
+document.addEventListener("keydown", function (e) { if (e.code === "Space" && !e.repeat) { e.preventDefault(); down(); } });
 document.addEventListener("keyup", function (e) { if (e.code === "Space") { e.preventDefault(); up(); } });
 window.addEventListener("blur", up);
 document.addEventListener("visibilitychange", function () { if (document.hidden) up(); });
 
-$("dnd").addEventListener("click", function () { if (st) send({ t: "dnd", on: !st.dnd }); });
-$("cam").addEventListener("click", function () { if (st) send({ t: "camera", on: !st.camera }); });
+$("camSw").addEventListener("click", function () { if (st) send({ t: "camera", on: !st.camera }); });
+$("dndSw").addEventListener("click", function () { if (st) send({ t: "dnd", on: !st.dnd }); });
+
+/* ── 영상: [길이 4바이트][JPEG] 를 fetch 로 읽어 캔버스에 그린다 ── */
+function FrameStream(url, canvas, fit) {
+  this.url = url; this.cv = canvas; this.fit = fit;
+  this.want = false; this.ctl = null; this.last = 0; this.got = 0; this.busy = false;
+  this.frames = 0; this.fps = 0;
+  var self = this;
+  setInterval(function () {                        // 멈춤 감시 + fps
+    self.fps = self.frames; self.frames = 0;
+    if (self.want && self.ctl && Date.now() - self.last > 4000) self.restart();
+  }, 1000);
+}
+FrameStream.prototype.set = function (want) {
+  if (want === this.want) return;
+  this.want = want;
+  if (want) this.restart();
+  else { if (this.ctl) this.ctl.abort(); this.ctl = null; this.got = 0; this.clear(); }
+};
+FrameStream.prototype.live = function () { return this.want && this.got && Date.now() - this.last < 2500; };
+FrameStream.prototype.clear = function () {
+  var g = this.cv.getContext("2d"); g.clearRect(0, 0, this.cv.width, this.cv.height);
+};
+FrameStream.prototype.restart = function () {
+  var self = this;
+  if (this.ctl) this.ctl.abort();
+  var ctl = new AbortController(); this.ctl = ctl; this.last = Date.now();
+  fetch(this.url + "?t=" + Date.now(), { signal: ctl.signal, cache: "no-store" }).then(function (r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    var reader = r.body.getReader(), buf = new Uint8Array(0);
+    function pump() {
+      return reader.read().then(function (res) {
+        if (res.done) throw new Error("end");
+        var nb = new Uint8Array(buf.length + res.value.length);
+        nb.set(buf, 0); nb.set(res.value, buf.length); buf = nb;
+        var off = 0;
+        while (buf.length - off >= 4) {
+          var n = ((buf[off] << 24) | (buf[off + 1] << 16) | (buf[off + 2] << 8) | buf[off + 3]) >>> 0;
+          if (buf.length - off - 4 < n) break;
+          self.draw(buf.slice(off + 4, off + 4 + n));
+          off += 4 + n;
+        }
+        if (off) buf = buf.slice(off);
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(function () {
+    if (self.ctl === ctl && self.want) setTimeout(function () { if (self.ctl === ctl && self.want) self.restart(); }, 1000);
+  });
+};
+FrameStream.prototype.draw = function (jpg) {
+  var self = this;
+  this.last = Date.now(); this.frames++;
+  if (this.busy) return;                                   // 그리는 중이면 이 프레임은 건너뛴다
+  this.busy = true;
+  createImageBitmap(new Blob([jpg], { type: "image/jpeg" })).then(function (bmp) {
+    self.busy = false;
+    if (!self.want) { bmp.close(); return; }
+    var cv = self.cv, dpr = window.devicePixelRatio || 1;
+    var w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    var s = self.fit === "cover" ? Math.max(w / bmp.width, h / bmp.height) : Math.min(w / bmp.width, h / bmp.height);
+    var dw = bmp.width * s, dh = bmp.height * s;
+    var g = cv.getContext("2d");
+    g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
+    g.drawImage(bmp, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    bmp.close();
+    if (!self.got) { self.got = 1; render(); }
+  }, function () { self.busy = false; });
+};
+var peerStream = new FrameStream("/cam/peer", $("peerCv"), "contain");
+var selfStream = new FrameStream("/cam/local", $("selfCv"), "cover");
+
+/* ── 그리기 ─────────────────────────── */
+function setV(id, text, cls) { var el = $(id); el.textContent = text; el.className = "v " + (cls || ""); }
+function fmt(sec) { return Math.floor(sec / 60) + ":" + ("0" + (sec % 60)).slice(-2); }
 
 function render() {
-  if (!st) {
-    $("me").textContent = "노드와 연결 끊김 — 다시 연결 중";
-    $("connDot").className = "dot bad";
-    ptt.className = "blocked"; ptt.innerHTML = "연결 중…";
-    return;
-  }
-  var p = st.peer;
-  $("me").textContent = st.name + (st.parrot ? " (앵무새)" : "");
-  $("connDot").className = "dot " + (!st.audio ? "bad" : st.dnd ? "warn" : "ok");
-  if (!st.audio) $("me").textContent += " · 마이크/스피커 없음";
+  if (!st) return;
+  var p = st.peer, b = document.body;
+  if (st.mode !== lastMode) { lastMode = st.mode; modeSince = Date.now(); }
+  b.classList.toggle("dnd", st.dnd);
+  b.classList.toggle("rx", st.mode === "rx");
+  b.classList.toggle("tx", st.mode === "tx");
 
-  var peerText = "상대 " + p.name + " · ";
-  if (!p.online) { peerText += "연결 안 됨"; $("peerDot").className = "dot bad"; }
-  else if (p.dnd) { peerText += "방해금지"; $("peerDot").className = "dot warn"; }
-  else if (!p.audio) { peerText += "오디오 장치 문제"; $("peerDot").className = "dot bad"; }
-  else { peerText += "연결됨" + (p.camera ? " · 카메라 공유 중" : ""); $("peerDot").className = "dot ok"; }
-  $("peer").textContent = peerText;
+  $("myName").textContent = st.name + (st.parrot ? " · 앵무새" : "");
+  $("linkDot").className = "dot " + (p.online ? "ok" : "bad");
+  $("linkText").innerHTML = p.online ? "<b>" + p.name + "</b> 와 연결됨" : "<b>" + p.name + "</b> 연결 안 됨";
+  $("audioDot").className = "dot " + (st.audio ? "ok" : "bad");
+  $("audioText").textContent = st.audio ? "마이크·스피커 정상" : "마이크·스피커 없음";
 
-  var cls, label, sub = "";
-  if (st.mode === "tx") { cls = "tx"; label = "송신 중"; sub = "떼면 넘어갑니다"; }
-  else if (st.mode === "rx") { cls = "rx"; label = "수신 중"; sub = p.name + " 님이 말하는 중"; }
-  else if (st.mode === "requesting") { cls = "req"; label = "연결 중…"; }
-  else if (st.dnd) { cls = "blocked"; label = "방해금지 중"; sub = "끄면 다시 주고받습니다"; }
-  else if (!st.audio) { cls = "blocked"; label = "마이크/스피커 없음"; sub = "USB 를 확인하십시오 · 자동으로 다시 연결합니다"; }
-  else if (!p.online) { cls = "blocked"; label = "상대 연결 안 됨"; }
-  else if (p.dnd) { cls = "blocked"; label = "상대 방해금지"; }
-  else { cls = ""; label = "누르고 말하기"; sub = "누르는 동안 송신 · 스페이스바도 됩니다"; }
-  ptt.className = cls;
-  ptt.innerHTML = label + (sub ? "<small>" + sub + "</small>" : "");
+  // 상대 카드
+  $("peerAv").firstChild.nodeValue = (p.name || "?").charAt(0).toUpperCase();
+  $("peerDot").className = "dot " + (!p.online ? "bad" : p.dnd ? "warn" : "ok");
+  $("peerName").textContent = p.name;
+  $("peerSt").textContent = !p.online ? "오프라인" : p.mode === "tx" ? "말하는 중" : p.mode === "rx" ? "듣는 중" : p.dnd ? "방해금지" : "대기 중";
+  if (p.online) {
+    setV("kvCam", p.camera ? "공유 중" : "꺼짐", p.camera ? "on" : "off");
+    setV("kvDnd", p.dnd ? "ON" : "OFF", p.dnd ? "warn" : "off");
+    setV("kvAudio", p.audio ? "정상" : "문제 있음", p.audio ? "on" : "bad");
+  } else { setV("kvCam", "—", "off"); setV("kvDnd", "—", "off"); setV("kvAudio", "—", "off"); }
 
-  $("dnd").className = "tg" + (st.dnd ? " on" : "");
-  $("dnd").textContent = st.dnd ? "방해금지 켜짐" : "방해금지";
-  $("cam").className = "tg" + (st.camera ? " on" : "");
-  $("cam").textContent = st.camera ? "카메라 공유 중" : "카메라 공유";
-  $("myCam").style.display = st.camera ? "" : "none";
+  // 내 설정
+  $("camSw").className = "sw" + (st.camera ? " on" : "");
+  $("rowCam").className = "row cam" + (st.camera ? " on" : "") + (st.has_camera ? "" : " disabled");
+  $("camD").textContent = !st.has_camera ? "이 무전기에는 카메라가 없습니다"
+    : st.camera && st.dnd ? "방해금지 중이라 멈춰 있습니다"
+    : st.camera ? "상대가 내 카메라를 보고 있습니다" : "상대에게 내 카메라를 보여 줍니다";
+  $("dndSw").className = "sw" + (st.dnd ? " on" : "");
+  $("rowDnd").className = "row dnd" + (st.dnd ? " on" : "");
+  $("dndD").textContent = st.dnd ? "음성·영상 모두 차단 중" : "켜면 음성·영상을 모두 막습니다";
 
-  if (lastNotice === null) lastNotice = st.notice_id;        // 접속 직후 옛 알림은 띄우지 않는다
+  // 영상
+  var canView = p.online && p.camera && !p.dnd && !st.dnd;
+  peerStream.set(canView);
+  selfStream.set(!!st.sharing);
+  $("pip").className = "pip" + (st.sharing ? " show" : "");
+  var live = peerStream.live();
+  var t = "", d = "";
+  if (st.dnd) { t = "방해금지 중"; d = "영상과 음성이 모두 차단되어 있습니다. 오른쪽에서 끌 수 있습니다."; }
+  else if (!p.online) { t = "상대 연결 안 됨"; d = p.name + " 무전기가 꺼져 있거나 네트워크가 끊겼습니다."; }
+  else if (p.dnd) { t = p.name + " 님이 방해금지 중"; d = "상대가 방해금지를 끄면 다시 보고 말할 수 있습니다."; }
+  else if (!p.camera) { t = "카메라 공유 꺼짐"; d = p.name + " 님이 카메라 공유를 켜면 여기에 나옵니다."; }
+  else if (!live) { t = "영상 불러오는 중…"; d = ""; }
+  $("ph").className = "ph" + (canView && live ? " hide" : "");
+  $("phT").textContent = t; $("phD").textContent = d;
+  $("ovTl").style.display = canView && live ? "" : "none";
+  $("vidName").textContent = p.name + " 카메라";
+  $("fps").textContent = peerStream.fps ? peerStream.fps + " fps" : "";
+
+  // 말하는 중 표시
+  $("talkText").textContent = st.mode === "tx" ? "송신 중 · 떼면 넘어갑니다" : p.name + " 님이 말하는 중";
+
+  // PTT
+  var cls, l, s = "";
+  if (st.mode === "tx") { cls = "tx"; l = "송신 중"; s = "떼면 상대에게 넘어갑니다"; }
+  else if (st.mode === "rx") { cls = "rx"; l = "수신 중"; s = p.name + " 님이 말하는 중"; }
+  else if (st.mode === "requesting") { cls = "req"; l = "연결 중…"; }
+  else if (st.dnd) { cls = "blocked"; l = "방해금지 중"; s = "끄면 다시 말할 수 있습니다"; }
+  else if (!st.audio) { cls = "blocked"; l = "마이크/스피커 없음"; s = "USB 를 확인하십시오"; }
+  else if (!p.online) { cls = "blocked"; l = "상대 연결 안 됨"; }
+  else if (p.dnd) { cls = "blocked"; l = "상대 방해금지"; }
+  else { cls = "ready"; l = "누르고 말하기"; s = "누르는 동안 송신 · 스페이스바"; }
+  ptt.className = cls; $("pttL").textContent = l; $("pttS").textContent = s;
+
+  if (lastNotice === null) lastNotice = st.notice_id;
   if (st.notice_id !== lastNotice) {
     lastNotice = st.notice_id;
-    $("notice").textContent = st.notice;
-    $("notice").className = "show";
+    $("notice").textContent = st.notice; $("notice").className = "notice show";
     clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(function () { $("notice").className = ""; }, 3000);
+    noticeTimer = setTimeout(function () { $("notice").className = "notice"; }, 3500);
   }
 }
+
+setInterval(function () {                                   // 시계·통화 시간·영상 상태 갱신
+  var n = new Date();
+  $("clock").textContent = ("0" + n.getHours()).slice(-2) + ":" + ("0" + n.getMinutes()).slice(-2);
+  $("talkTime").textContent = fmt(Math.floor((Date.now() - modeSince) / 1000));
+  render();
+}, 500);
 
 connect();
 </script>

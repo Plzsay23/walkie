@@ -21,8 +21,11 @@ import time
 from collections import deque
 from pathlib import Path
 
+import aiohttp
 import numpy as np
 from aiohttp import WSMsgType, web
+
+from walkie.camera import Camera, FrameHub
 
 log = logging.getLogger("walkie")
 
@@ -162,6 +165,14 @@ class Node(asyncio.DatagramProtocol):
         self.mic = None
         self.last_mic_cb = 0.0
 
+        self.camera_dev = args.camera       # None 이면 이 무전기엔 카메라가 없다
+        self.cam = None
+        self.cam_hub = FrameHub()           # 내 카메라
+        self.peer_hub = FrameHub()          # 상대 카메라 (상대 노드에서 한 줄기로 받아 로컬 탭들에 나눠 준다)
+        self.peer_viewers = 0
+        self._relay_task = None
+        self.http = None                    # aiohttp.ClientSession, run() 에서 만든다
+
     async def _resolve_peer(self):
         try:
             infos = await self.loop.getaddrinfo(self.peer_host, self.peer_port,
@@ -263,7 +274,8 @@ class Node(asyncio.DatagramProtocol):
 
     def send_status(self):
         self.send_ctrl({"t": "status", "name": self.name, "dnd": self.dnd,
-                        "camera": self.camera, "mode": self.mode, "audio": bool(self.audio_ok)})
+                        "camera": self.sharing(), "mode": self.mode, "audio": bool(self.audio_ok),
+                        "http": self.args.http})
 
     def peer_online(self):
         return time.monotonic() - self.peer_seen < PEER_TIMEOUT
@@ -428,13 +440,71 @@ class Node(asyncio.DatagramProtocol):
                 self.mode = IDLE
                 self.rx_id = None
                 self.speaker.clear()
+        self.update_camera()
         self.send_status()
         self.push_ui()
 
     def set_camera(self, on):
-        self.camera = on            # 영상 송출은 다음 단계. 지금은 상태만 주고받는다.
+        if on and self.camera_dev is None:
+            return self.say("이 무전기에는 카메라가 없습니다")
+        self.camera = on
+        self.update_camera()
         self.send_status()
         self.push_ui()
+
+    # ---------------------------------------------------------------- 카메라
+    def update_camera(self):
+        """공유 스위치가 켜져 있고 방해금지가 아닐 때만 카메라 장치를 연다."""
+        want = self.camera and not self.dnd and self.camera_dev is not None
+        if want and self.cam is None:
+            self.cam = Camera(self.camera_dev, self.cam_hub, self.loop, size=self.args.cam_size,
+                              fps=self.args.cam_fps, on_fail=self._camera_failed)
+            self.cam.start()
+        elif not want and self.cam is not None:
+            self.cam.stop()
+            self.cam = None
+            self.cam_hub.clear()
+
+    def _camera_failed(self, why):
+        self.cam = None
+        self.camera = False
+        self.cam_hub.clear()
+        self.say(f"카메라 오류: {why}")
+        self.send_status()
+
+    def sharing(self):
+        return self.cam is not None and not self.dnd
+
+    def can_view_peer(self):
+        return (self.peer_online() and bool(self.peer.get("camera")) and not self.peer.get("dnd")
+                and not self.dnd and self.peer_addr is not None)
+
+    def ensure_relay(self):
+        if self._relay_task is None and self.peer_viewers > 0 and self.can_view_peer():
+            self._relay_task = asyncio.ensure_future(self._relay())
+
+    async def _relay(self):
+        """상대 노드의 /cam/raw 를 받아 peer_hub 에 넣는다. 보는 탭이 없으면 끊는다."""
+        try:
+            while self.peer_viewers > 0 and self.can_view_peer():
+                url = f"http://{self.peer_addr[0]}:{self.peer.get('http')}/cam/raw"
+                try:
+                    timeout = aiohttp.ClientTimeout(total=None, connect=3, sock_read=5)
+                    async with self.http.get(url, timeout=timeout) as r:
+                        if r.status != 200:
+                            await asyncio.sleep(1)
+                            continue
+                        while self.peer_viewers > 0 and self.can_view_peer():
+                            n = struct.unpack(">I", await r.content.readexactly(4))[0]
+                            if n > 8_000_000:
+                                break
+                            self.peer_hub.publish(await r.content.readexactly(n))
+                except (aiohttp.ClientError, asyncio.IncompleteReadError, asyncio.TimeoutError, OSError) as e:
+                    log.debug("영상 중계 끊김: %s", e)
+                    await asyncio.sleep(1)
+        finally:
+            self.peer_hub.clear()
+            self._relay_task = None
 
     def handle_ui(self, cid, d):
         t = d.get("t")
@@ -481,6 +551,7 @@ class Node(asyncio.DatagramProtocol):
         return {
             "t": "state", "name": self.name, "mode": self.mode,
             "dnd": self.dnd, "camera": self.camera, "parrot": self.parrot,
+            "has_camera": self.camera_dev is not None, "sharing": self.sharing(),
             "audio": bool(self.audio_ok),
             "peer": {"online": online, "name": self.peer.get("name", self.peer_host),
                      "dnd": p.get("dnd", False), "camera": p.get("camera", False),
@@ -528,6 +599,61 @@ class Node(asyncio.DatagramProtocol):
 _client_ids = itertools.count(1)
 
 
+async def _stream_frames(request, hub, alive):
+    """hub 의 프레임을 [길이 4바이트][JPEG] 로 이어 보낸다. alive() 가 거짓이 되면 끝낸다.
+
+    탭은 fetch 로 읽어 캔버스에 그린다(<img> MJPEG 는 멈춰도 알 방법이 없어서 이렇게 했다).
+    노드끼리도 같은 형식을 쓴다.
+    """
+    resp = web.StreamResponse(headers={"Content-Type": "application/octet-stream",
+                                       "Cache-Control": "no-cache, no-store"})
+    await resp.prepare(request)
+    seq = -1
+    try:
+        while alive():
+            frame, seq = await hub.next(seq, timeout=2.0)
+            if frame is not None:
+                await resp.write(struct.pack(">I", len(frame)) + frame)
+    except ConnectionError:
+        pass
+    return resp
+
+
+async def cam_local(request):
+    """내 카메라 미리보기(같은 공간의 탭용)."""
+    node = request.app["node"]
+    if not node.sharing():
+        return web.Response(status=409, text="카메라 공유가 꺼져 있습니다")
+    return await _stream_frames(request, node.cam_hub, node.sharing)
+
+
+async def cam_peer(request):
+    """상대 카메라. 탭이 몇 대든 상대 노드와는 한 줄기만 연다."""
+    node = request.app["node"]
+    if not node.can_view_peer():
+        return web.Response(status=409, text="상대 카메라를 볼 수 없습니다")
+    node.peer_viewers += 1
+    node.ensure_relay()
+    try:
+        return await _stream_frames(request, node.peer_hub, node.can_view_peer)
+    finally:
+        node.peer_viewers -= 1
+
+
+async def cam_raw(request):
+    """상대 노드가 가져가는 내 카메라."""
+    node = request.app["node"]
+    if node.peer_addr is None or request.remote != node.peer_addr[0]:
+        return web.Response(status=403)
+
+    def alive():
+        return node.sharing() and not node.peer.get("dnd")
+
+    if not alive():
+        return web.Response(status=409)
+    return await _stream_frames(request, node.cam_hub, alive)
+
+
 async def index(request):
     return web.FileResponse(STATIC / "index.html")
 
@@ -557,11 +683,15 @@ async def run(args):
     node = Node(args, loop)
     await loop.create_datagram_endpoint(lambda: node, local_addr=(args.bind, args.port))
     node.open_audio()
+    node.http = aiohttp.ClientSession()
 
     app = web.Application()
     app["node"] = node
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
+    app.router.add_get("/cam/local", cam_local)
+    app.router.add_get("/cam/peer", cam_peer)
+    app.router.add_get("/cam/raw", cam_raw)
     app.router.add_static("/static", STATIC)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
@@ -582,6 +712,9 @@ def main():
     ap.add_argument("--in-dev", default=None, help="마이크 장치 번호나 이름 일부")
     ap.add_argument("--out-dev", default=None, help="스피커 장치 번호나 이름 일부")
     ap.add_argument("--no-audio", action="store_true", help="오디오 장치 없이 실행")
+    ap.add_argument("--camera", default=None, help="카메라 장치 (OpenCV 번호, 예: 0). 없으면 카메라 없는 무전기")
+    ap.add_argument("--cam-size", default="960x540", help="영상 크기 가로x세로")
+    ap.add_argument("--cam-fps", type=int, default=12)
     ap.add_argument("--parrot", action="store_true",
                     help="받은 말을 되돌려 보내는 테스트 상대 (오디오 장치를 쓰지 않는다)")
     ap.add_argument("--list-devices", action="store_true")
@@ -594,6 +727,7 @@ def main():
         return
     if not args.name or not args.peer:
         ap.error("--name 과 --peer 가 필요합니다")
+    args.cam_size = tuple(int(v) for v in args.cam_size.lower().split("x"))
     for key in ("in_dev", "out_dev"):
         val = getattr(args, key)
         if val is not None and val.isdigit():
