@@ -1,0 +1,32 @@
+# 무전기 노드. 설정은 같은 폴더의 .env 에서 읽는다 (.env.example 참고).
+#
+#   docker compose up -d --build     띄우기 (재부팅해도 자동으로 다시 뜬다)
+#   docker compose logs -f           로그
+#   docker compose down              내리기
+services:
+  walkie:
+    build: .
+    image: walkie:latest
+    container_name: walkie
+    restart: unless-stopped        # 죽으면 다시 뜨고, 도커가 부팅 때 뜨면서 같이 뜬다
+    # 무전기는 UDP(음성·제어)와 웹(탭)을 함께 쓰고 상대 주소가 Tailscale 이라,
+    # 포트를 하나씩 내보내는 것보다 호스트 네트워크를 그대로 쓰는 편이 단순하고 지연도 적다.
+    network_mode: host
+    environment:
+      WALKIE_ARGS: ${WALKIE_ARGS}
+    volumes:
+      - /dev:/dev                              # 마이크·스피커·카메라 장치 노드
+      - /run/udev:/run/udev:ro                 # libcamera 가 카메라를 찾을 때 본다
+      - /etc/asound.conf:/etc/asound.conf:ro   # walkie_in / walkie_out 장치 정의
+    # /dev 를 넣어줘도 커널이 접근을 막으므로 장치 종류별로 권한을 연다.
+    # 주 번호는 `ls -l /dev/video0 /dev/media0 ...` 로 확인한 값이다.
+    # 커널이 올라가며 동적 주 번호(239·252)가 바뀌면 여기를 고쳐야 한다.
+    device_cgroup_rules:
+      - "c 81:* rmw"     # /dev/video*      (V4L2)
+      - "c 239:* rmw"    # /dev/media*      (미디어 컨트롤러)
+      - "c 252:* rmw"    # /dev/dma_heap/*  (카메라 버퍼)
+      - "c 116:* rmw"    # /dev/snd/*       (ALSA)
+      - "c 10:* rmw"     # /dev/vchiq, /dev/vcio
+    group_add:
+      - audio
+      - video
