@@ -712,7 +712,8 @@ def main():
     ap.add_argument("--in-dev", default=None, help="마이크 장치 번호나 이름 일부")
     ap.add_argument("--out-dev", default=None, help="스피커 장치 번호나 이름 일부")
     ap.add_argument("--no-audio", action="store_true", help="오디오 장치 없이 실행")
-    ap.add_argument("--camera", default=None, help="카메라 장치 (OpenCV 번호, 예: 0). 없으면 카메라 없는 무전기")
+    ap.add_argument("--camera", default=None,
+                    help="카메라: 파이 카메라면 picam, USB 웹캠이면 번호(0). 없으면 카메라 없는 무전기")
     ap.add_argument("--cam-size", default="960x540", help="영상 크기 가로x세로")
     ap.add_argument("--cam-fps", type=int, default=12)
     ap.add_argument("--parrot", action="store_true",

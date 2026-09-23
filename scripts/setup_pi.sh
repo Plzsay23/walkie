@@ -6,6 +6,7 @@
 #       파이 B:  bash scripts/setup_pi.sh B walkie-a
 #
 # 상대 주소는 상대 파이의 Tailscale 이름(MagicDNS)이나 100.x.x.x IP.
+# 카메라가 있으면 CAMERA=0 을 앞에 붙인다.
 # 마이크/스피커 카드를 자동으로 못 찾으면 MIC_CARD=... SPK_CARD=... 를 앞에 붙여 지정한다
 # (이름은 `cat /proc/asound/cards` 의 대괄호 안 값).
 set -euo pipefail
@@ -40,7 +41,7 @@ if ! tailscale status >/dev/null 2>&1; then
   echo "    sudo tailscale up --hostname=walkie-$(echo "$NAME" | tr 'A-Z' 'a-z')"
 fi
 
-step "4. 오디오 장치 (ALSA 기본 장치로 고정)"
+step "4. 오디오 장치"
 cat /proc/asound/cards
 card_id() {  # /proc/asound/cards 에서 설명이 $1 에 맞는 카드의 id
   sed -n 's/^ *[0-9]* \[\([^ ]*\) *\]: \(.*\)$/\1\t\2/p' /proc/asound/cards | grep -i -- "$1" | head -n1 | cut -f1 || true
@@ -60,27 +61,32 @@ if [ -z "$MIC_CARD" ] || [ -z "${SPK_CARD:-}" ]; then
   exit 1
 fi
 echo "마이크 카드: $MIC_CARD / 스피커 카드: $SPK_CARD"
+# 기본 장치(pcm.!default)는 건드리지 않는다. PipeWire 가 도는 파이에서 그걸 바꾸면 충돌한다.
+# 대신 walkie 전용 이름을 추가한다. plug 가 16kHz mono 와 장치 고유 형식 사이를 변환해 주는데,
+# 이게 없으면 USB 스피커가 16kHz 를 못 받아 "Invalid sample rate" 로 열리지 않는다.
 # 카드 번호 대신 id 로 묶어서 USB 꽂는 순서가 바뀌어도 그대로 간다.
-# plug 가 16kHz mono 와 장치 고유 형식 사이를 변환해 준다.
 sudo tee /etc/asound.conf >/dev/null <<EOF
 # walkie setup_pi.sh 가 만듦
-pcm.!default {
-    type asym
-    playback.pcm { type plug slave.pcm "hw:CARD=$SPK_CARD,DEV=0" }
-    capture.pcm  { type plug slave.pcm "hw:CARD=$MIC_CARD,DEV=0" }
+pcm.walkie_in {
+    type plug
+    slave.pcm "hw:CARD=$MIC_CARD,DEV=0"
+    hint { show on description "walkie 마이크" }
 }
-ctl.!default { type hw card $SPK_CARD }
+pcm.walkie_out {
+    type plug
+    slave.pcm "hw:CARD=$SPK_CARD,DEV=0"
+    hint { show on description "walkie 스피커" }
+}
 EOF
-if pgrep -x pipewire >/dev/null || pgrep -x pulseaudio >/dev/null; then
-  echo "주의: PipeWire/PulseAudio 가 돌고 있습니다. 데스크톱 OS 면 장치를 잡고 있을 수 있습니다."
-  echo "      Raspberry Pi OS Lite 를 권합니다."
-fi
 sudo usermod -aG audio "$USER_NAME"
 amixer -q -c "$SPK_CARD" sset PCM 80% unmute 2>/dev/null || amixer -q -c "$SPK_CARD" sset Speaker 80% unmute 2>/dev/null || true
 
-step "5. 부팅 시 자동 실행 (systemd)"
+step "5. 시계 (이 망은 NTP 가 막혀 있을 수 있다)"
+sudo bash "$REPO/scripts/install_time_sync.sh"
+
+step "6. 부팅 시 자동 실행 (systemd)"
 sudo tee /etc/default/walkie >/dev/null <<EOF
-WALKIE_ARGS="--name $NAME --peer $PEER:$PORT --port $PORT --http $HTTP"
+WALKIE_ARGS="--name $NAME --peer $PEER:$PORT --port $PORT --http $HTTP --in-dev walkie_in --out-dev walkie_out${CAMERA:+ --camera $CAMERA}"
 EOF
 sudo tee /etc/systemd/system/walkie.service >/dev/null <<EOF
 [Unit]

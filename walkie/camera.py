@@ -12,6 +12,8 @@ import time
 
 log = logging.getLogger("walkie.camera")
 
+PICAM_NAMES = ("picam", "picamera", "rpicam", "csi")     # --camera picam 으로 파이 카메라 사용
+
 # 공유를 껐다 바로 켜면 이전 스레드가 장치를 놓기 전에 새 스레드가 열려고 한다. 차례를 지키게 한다.
 _device_lock = threading.Lock()
 
@@ -77,8 +79,59 @@ class Camera:
 
     def _run(self):
         with _device_lock:
-            if not self._stop.is_set():
+            if self._stop.is_set():
+                return
+            if str(self.source) in PICAM_NAMES:
+                self._capture_picam()
+            else:
                 self._capture()
+
+    def _capture_picam(self):
+        """파이 카메라(CSI). rpicam-vid 가 MJPEG 를 표준출력으로 흘려 주면 프레임 단위로 잘라 쓴다.
+
+        파이 카메라는 libcamera 를 거쳐야 해서 OpenCV 로 직접 못 연다.
+        인코딩도 이 도구가 하므로 파이 CPU 부담이 적다.
+        """
+        import shutil
+        import subprocess
+
+        exe = next((e for e in ("rpicam-vid", "libcamera-vid") if shutil.which(e)), None)
+        if exe is None:
+            return self._fail("rpicam-vid 가 없습니다 (Raspberry Pi OS 가 아닌 듯합니다)")
+        cmd = [exe, "--codec", "mjpeg", "--timeout", "0", "--nopreview",
+               "--width", str(self.size[0]), "--height", str(self.size[1]),
+               "--framerate", str(self.fps), "--quality", str(self.quality), "--output", "-"]
+        log.info("카메라 켬 (%s, %dx%d, %dfps)", exe, *self.size, self.fps)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+        buf = b""
+        try:
+            while not self._stop.is_set():
+                chunk = proc.stdout.read(65536)
+                if not chunk:
+                    if self._stop.is_set():
+                        return
+                    return self._fail("영상이 끊겼습니다")
+                buf += chunk
+                while True:                      # JPEG 는 FFD8 로 시작해 FFD9 로 끝난다
+                    start = buf.find(b"\xff\xd8")
+                    if start < 0:
+                        buf = b""
+                        break
+                    end = buf.find(b"\xff\xd9", start + 2)
+                    if end < 0:
+                        buf = buf[start:]
+                        break
+                    self.loop.call_soon_threadsafe(self.hub.publish, buf[start:end + 2])
+                    buf = buf[end + 2:]
+                if len(buf) > 8_000_000:         # 어긋났을 때 무한히 쌓이지 않게
+                    buf = b""
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            log.info("카메라 끔")
 
     def _capture(self):
         import cv2
