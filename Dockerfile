@@ -12,7 +12,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # 1) 시스템 패키지
 #    libportaudio2  : 마이크·스피커(sounddevice)
 #    rpicam-apps-lite: 파이 카메라(rpicam-vid). USB 웹캠만 쓸 거면 없어도 된다
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#    라즈베리파이 저장소 키는 SHA1 로 자체 서명돼 있는데 Debian 13 은 2026-02 부터 SHA1 을 거부한다.
+#    (apt 가 sqv 로 검증하며 "Signing key ... is not bound" 로 실패한다)
+#    그래서 이 이미지 안에서만 SHA1 을 허용하는 정책 파일을 두고 쓴다.
+ENV SEQUOIA_CRYPTO_POLICY=/etc/sequoia-allow-sha1.toml
+RUN printf '[hash_algorithms.sha1]\ncollision_resistance = "always"\nsecond_preimage_resistance = "always"\n' \
+        > /etc/sequoia-allow-sha1.toml \
+    && apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg alsa-utils libportaudio2 \
     && curl -fsSL https://archive.raspberrypi.com/debian/raspberrypi.gpg.key \
         | gpg --dearmor -o /usr/share/keyrings/raspberrypi.gpg \

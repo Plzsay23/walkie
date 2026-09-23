@@ -14,19 +14,42 @@ services:
     network_mode: host
     environment:
       WALKIE_ARGS: ${WALKIE_ARGS}
+      TZ: ${TZ:-Asia/Seoul}
     volumes:
       - /dev:/dev                              # 마이크·스피커·카메라 장치 노드
       - /run/udev:/run/udev:ro                 # libcamera 가 카메라를 찾을 때 본다
       - /etc/asound.conf:/etc/asound.conf:ro   # walkie_in / walkie_out 장치 정의
     # /dev 를 넣어줘도 커널이 접근을 막으므로 장치 종류별로 권한을 연다.
-    # 주 번호는 `ls -l /dev/video0 /dev/media0 ...` 로 확인한 값이다.
-    # 커널이 올라가며 동적 주 번호(239·252)가 바뀌면 여기를 고쳐야 한다.
+    #
+    # 주의: /dev/media* 와 /dev/dma_heap/* 은 **주 번호가 부팅할 때마다 바뀐다**(실제로 239→238 로 바뀌어
+    # 재부팅 후 카메라가 먹통이 됐다). 그래서 특정 번호 대신 리눅스가 동적 할당에 쓰는 구간(234~254)을
+    # 통째로 연다. 고정 번호인 81(V4L2)·116(ALSA)·10(vchiq·vcio)은 그대로 적는다.
+    # 블록 장치나 /dev/mem 같은 것은 열리지 않는다.
     device_cgroup_rules:
-      - "c 81:* rmw"     # /dev/video*      (V4L2)
-      - "c 239:* rmw"    # /dev/media*      (미디어 컨트롤러)
-      - "c 252:* rmw"    # /dev/dma_heap/*  (카메라 버퍼)
-      - "c 116:* rmw"    # /dev/snd/*       (ALSA)
+      - "c 81:* rmw"     # /dev/video*   (V4L2)
+      - "c 116:* rmw"    # /dev/snd/*    (ALSA)
       - "c 10:* rmw"     # /dev/vchiq, /dev/vcio
+      - "c 234:* rmw"    # 아래는 동적 할당 구간 — /dev/media*, /dev/dma_heap/* 이 여기 들어온다
+      - "c 235:* rmw"
+      - "c 236:* rmw"
+      - "c 237:* rmw"
+      - "c 238:* rmw"
+      - "c 239:* rmw"
+      - "c 240:* rmw"
+      - "c 241:* rmw"
+      - "c 242:* rmw"
+      - "c 243:* rmw"
+      - "c 244:* rmw"
+      - "c 245:* rmw"
+      - "c 246:* rmw"
+      - "c 247:* rmw"
+      - "c 248:* rmw"
+      - "c 249:* rmw"
+      - "c 250:* rmw"
+      - "c 251:* rmw"
+      - "c 252:* rmw"
+      - "c 253:* rmw"
+      - "c 254:* rmw"
     group_add:
       - audio
       - video
